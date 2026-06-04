@@ -1,0 +1,13 @@
+# virtualenv created by install.bat
+.venv/
+
+# python
+__pycache__/
+*.pyc
+
+# runtime state (per-project, never in the tool repo)
+.worktop/
+
+# scratch
+*.tmp
+*.log
