@@ -3,32 +3,47 @@ setlocal enabledelayedexpansion
 cd /d "%~dp0"
 echo [worktop] Installing into "%~dp0"
 
-REM --- locate a Python interpreter ---
-set "PYEXE="
-where py >nul 2>nul && set "PYEXE=py"
-if not defined PYEXE ( where python >nul 2>nul && set "PYEXE=python" )
-if not defined PYEXE (
-  echo [worktop] ERROR: Python not found on PATH. Install Python 3.9+ from python.org and re-run.
-  exit /b 1
+REM --- prefer uv (fast; many setups already have it) ---
+where uv >nul 2>nul
+if not errorlevel 1 (
+  echo [worktop] Using uv
+  uv venv .venv || ( echo [worktop] ERROR: uv venv failed & exit /b 1 )
+  uv pip install -r requirements.txt --python ".venv\Scripts\python.exe" || ( echo [worktop] ERROR: uv pip install failed & exit /b 1 )
+  goto :done
 )
-echo [worktop] Using interpreter: %PYEXE%
 
-REM --- create the virtualenv ---
-%PYEXE% -m venv .venv
-if errorlevel 1 ( echo [worktop] ERROR: failed to create .venv & exit /b 1 )
+REM --- else the py launcher ---
+where py >nul 2>nul
+if not errorlevel 1 (
+  echo [worktop] Using py launcher
+  py -m venv .venv || ( echo [worktop] ERROR: venv creation failed & exit /b 1 )
+  goto :pipinstall
+)
 
-REM --- install dependencies ---
+REM --- else a real python on PATH (reject the Microsoft Store stub, which fails to run code) ---
+python -c "import sys" >nul 2>nul
+if not errorlevel 1 (
+  echo [worktop] Using python
+  python -m venv .venv || ( echo [worktop] ERROR: venv creation failed & exit /b 1 )
+  goto :pipinstall
+)
+
+echo [worktop] ERROR: no usable Python found (tried uv, py, python).
+echo [worktop] Install uv (https://docs.astral.sh/uv) or Python 3.9+ from python.org, then re-run.
+exit /b 1
+
+:pipinstall
 ".venv\Scripts\python.exe" -m pip install --upgrade pip
-".venv\Scripts\python.exe" -m pip install -r requirements.txt
-if errorlevel 1 ( echo [worktop] ERROR: pip install failed & exit /b 1 )
+".venv\Scripts\python.exe" -m pip install -r requirements.txt || ( echo [worktop] ERROR: pip install failed & exit /b 1 )
 
+:done
 echo.
 echo [worktop] Installed OK.
 echo.
-echo   Launch the ball (run from your PROJECT folder so state lands in that project):
+echo   Launch the ball (run from your PROJECT folder so state lands there):
 echo       "%~dp0worktop-launch.bat"
 echo.
-echo   Agent call convention (run with the project folder as the working directory):
+echo   Agent call convention (working directory = the project root):
 echo       "%~dp0.venv\Scripts\python.exe" "%~dp0worktop.py" task "Title" --id ^<lane^>
 echo.
 echo   See README.md for the Claude Code settings.json hook and agent instructions.
