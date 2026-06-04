@@ -649,12 +649,16 @@ class Worktop(QWidget):
         # background watcher / UserPromptSubmit hook, then clear that lane's decision.
         lane = self._dec_lane or self._focus_lane
         dlog(f"_choose: lane={lane} idx={idx} text={text!r}")
+        # PER-LANE response file -> only this lane's agent/watcher reads it (no cross-agent leak).
+        # Also write the legacy shared file so an in-flight pre-upgrade watcher still completes.
+        payload = {"q": q, "choice": text, "index": idx, "lane": lane,
+                   "t": datetime.now().strftime("%H:%M:%S"), "consumed": False}
+        rp = os.path.join(STATE_DIR, "response_" + (lane or "main") + ".json")
         try:
             os.makedirs(STATE_DIR, exist_ok=True)
-            with open(RESP, "w", encoding="utf-8") as f:
-                json.dump({"q": q, "choice": text, "index": idx, "lane": lane,
-                           "t": datetime.now().strftime("%H:%M:%S"), "consumed": False},
-                          f, ensure_ascii=False)
+            for path in (rp, RESP):
+                with open(path, "w", encoding="utf-8") as f:
+                    json.dump(payload, f, ensure_ascii=False)
         except Exception:
             pass
         if lane:

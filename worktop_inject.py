@@ -1,18 +1,15 @@
 #!/usr/bin/env python3
-"""UserPromptSubmit hook — deliver a Worktop GUI decision click to the agent.
+"""UserPromptSubmit hook — deliver THIS lane's Worktop decision click to the agent.
 
-When the user clicks an option in the GUI's amber decision panel, gui.pyw writes
-their choice to response.json. This hook (wired into a project's settings.json
-UserPromptSubmit) reads that file on the next prompt, injects "user chose X" into
-the agent's context via hookSpecificOutput.additionalContext, and marks it consumed
-so it is delivered exactly once. stdlib only — no deps.
-
-Note: the response channel is per-project but shared across agents in that project;
-with multiple concurrent agents a click may reach whichever agent prompts first."""
+Reads a PER-LANE response file response_<lane>.json where lane = $WORKTOP_LANE. If
+WORKTOP_LANE is NOT set, this does NOTHING — preventing cross-agent leakage (a click on
+one agent's card must not be injected into a different agent's prompt). With multiple
+concurrent agents, prefer the lane-scoped worktop_watch.py for delivery. stdlib only."""
 import sys
+import os
 import json
 
-from worktop_paths import RESP
+from worktop_paths import STATE_DIR
 
 
 def main():
@@ -20,8 +17,12 @@ def main():
         sys.stdout.reconfigure(encoding="utf-8")  # the agent reads hook stdout as UTF-8
     except Exception:
         pass
+    lane = os.environ.get("WORKTOP_LANE")
+    if not lane:
+        return 0  # no session lane -> no passive delivery (avoid cross-agent leak)
+    resp = os.path.join(STATE_DIR, "response_" + lane + ".json")
     try:
-        with open(RESP, encoding="utf-8") as f:
+        with open(resp, encoding="utf-8") as f:
             r = json.load(f)
     except Exception:
         return 0
@@ -31,7 +32,7 @@ def main():
     q = r.get("q", "")
     r["consumed"] = True
     try:
-        with open(RESP, "w", encoding="utf-8") as f:
+        with open(resp, "w", encoding="utf-8") as f:
             json.dump(r, f, ensure_ascii=False)
     except Exception:
         pass

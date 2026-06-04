@@ -76,15 +76,16 @@ Lane id resolves as `--id <lane>` › `$WORKTOP_LANE` › `$CLAUDE_SESSION_ID` �
 
 ### Click-to-answer decisions (Claude Code)
 
-1. **Real-time** (recommended): after `worktop.py decide …`, the agent launches the watcher
-   in the background and ends its turn — the user's click wakes it with the choice:
+1. **Real-time** (recommended): after `worktop.py decide … --id <lane>`, the agent launches the
+   watcher **for that lane** in the background and ends its turn — the user's click wakes it:
 
    ```bash
-   "$PY" "C:/path/to/claude-worktop/worktop_watch.py"   # run in background; prints the choice on click
+   "$PY" "C:/path/to/claude-worktop/worktop_watch.py" --lane <lane>   # background; prints the choice on click
    ```
 
-2. **Passive fallback**: wire the inject hook into the project's `.claude/settings.json` so a
-   click is delivered on the next prompt:
+2. **Passive fallback**: wire the inject hook into the project's `.claude/settings.json`. It only
+   delivers when the session's `WORKTOP_LANE` env var is set (so it can't cross-feed a click to the
+   wrong agent); otherwise it's a no-op and you rely on the watcher above.
 
    ```json
    {
@@ -97,15 +98,22 @@ Lane id resolves as `--id <lane>` › `$WORKTOP_LANE` › `$CLAUDE_SESSION_ID` �
    }
    ```
 
+See **[AGENTS.md](AGENTS.md)** for the full set of conventions to give your agent.
+
 ## State
 
-Per-project, under `<project>/.worktop/` (`lanes/`, `response.json`, `win.json`, `gui.log`).
+Per-project, under `<project>/.worktop/` (`lanes/`, `response_<lane>.json`, `win.json`, `gui.log`).
 Override the location with the `WORKTOP_STATE` environment variable. Add `.worktop/` to your project's `.gitignore`.
+
+## Multi-agent
+
+Decision responses are **per-lane** (`response_<lane>.json`): each agent's `worktop_watch.py --lane <lane>`
+reads only its own lane, so a click routes to the right agent. The passive `worktop_inject.py` hook delivers
+only when `$WORKTOP_LANE` is set (else it's a no-op), so it never cross-feeds a click to the wrong agent.
 
 ## Known limitations
 
-- The decision **response channel is shared per project** — with multiple concurrent agents, a
-  click may reach whichever agent prompts first. Per-lane response routing is on the roadmap.
+- The passive inject hook needs `$WORKTOP_LANE` to deliver; without it, rely on the lane-scoped watcher.
 - Bottom-edge docking isn't a dock target (left / right / top are).
 
 ## License
