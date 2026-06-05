@@ -92,8 +92,13 @@ QSplitter::handle:vertical {{ height:6px; }}
 #peek {{ background:#262626; border:1px solid #383838; border-left:3px solid #4a4a4a; border-radius:6px; }}
 #peek[hov="true"] {{ background:#2c343d; border:1px solid #3a4654; border-left:3px solid {ACCENT}; }}
 #striptitle {{ color:#cfcfcf; font-size:12px; font-weight:600; background:transparent; }}
+#projhdr {{ color:#7fb6c8; font-size:10px; font-weight:700; background:transparent; padding:5px 2px 1px 4px; }}
 #donebanner {{ background:#16331a; border:1px solid {GREEN}; border-radius:8px; }}
 #donetext {{ color:#9be86a; font-size:14px; font-weight:700; background:transparent; }}
+#decqscroll {{ background:transparent; border:none; }}
+#imgwin {{ background:transparent; }}
+#imghdr {{ color:{DECISION}; font-size:11px; font-weight:700; background:transparent; }}
+#imgscroll {{ background:transparent; border:none; }}
 """
 
 
@@ -235,6 +240,59 @@ class StackDeck(QWidget):
             self.relayout(animate=False)
 
 
+class ImagePopup(QWidget):
+    """Companion window shown beside the ball to display a decision's images."""
+
+    def __init__(self):
+        super().__init__()
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.resize(360, 440)
+        self._sig = None
+        oc = QVBoxLayout(self); oc.setContentsMargins(0, 0, 0, 0)
+        content = QWidget(); content.setObjectName("imgwin")
+        oc.addWidget(content)
+        cl = QVBoxLayout(content); cl.setContentsMargins(11, 9, 11, 11); cl.setSpacing(7)
+        hdr = QLabel("决策附图"); hdr.setObjectName("imghdr")
+        cl.addWidget(hdr)
+        self._holder = QWidget(); self._holder.setStyleSheet("background:transparent;")
+        self._box = QVBoxLayout(self._holder); self._box.setContentsMargins(0, 0, 4, 0); self._box.setSpacing(8)
+        sa = QScrollArea(); sa.setObjectName("imgscroll"); sa.setWidgetResizable(True); sa.setWidget(self._holder)
+        sa.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        cl.addWidget(sa, 1)
+
+    def paintEvent(self, e):
+        p = QPainter(self); p.setRenderHint(QPainter.Antialiasing)
+        r = QRectF(0.5, 0.5, self.width() - 1, self.height() - 1)
+        path = QPainterPath(); path.addRoundedRect(r, 12, 12)
+        p.fillPath(path, QColor(BG))
+        pen = QPen(QColor(BORDER_C)); pen.setWidth(1); p.setPen(pen); p.drawPath(path)
+
+    def set_images(self, paths):
+        sig = tuple(paths)
+        if sig == self._sig:
+            return
+        self._sig = sig
+        while self._box.count():
+            it = self._box.takeAt(0); w = it.widget()
+            if w:
+                w.deleteLater()
+        for pth in paths:
+            cell = QLabel(); cell.setObjectName("imgcell"); cell.setAlignment(Qt.AlignCenter)
+            pm = QPixmap(pth)
+            if pm.isNull():
+                cell.setText("(无法加载图片:\n" + os.path.basename(pth) + ")")
+                cell.setStyleSheet("color:#c08a8a; padding:10px; background:#141414; border:1px solid #2d2d2d; border-radius:6px;")
+            else:
+                w0 = max(self.width() - 46, 120)
+                if pm.width() > w0:
+                    pm = pm.scaledToWidth(w0, Qt.SmoothTransformation)
+                cell.setPixmap(pm)
+                cell.setStyleSheet("background:#141414; border:1px solid #2d2d2d; border-radius:6px; padding:4px;")
+            self._box.addWidget(cell)
+        self._box.addStretch(1)
+
+
 class Worktop(QWidget):
     def __init__(self):
         super().__init__()
@@ -263,6 +321,7 @@ class Worktop(QWidget):
         self._lanes = []; self._lane_sig = None; self._newest_mt = 0.0
         self._focus_lane = None; self._dec_lane = None
         self._lane_states = {}; self._notified_dec = {}
+        self._dec_imgs = []   # images on the focused decision (shown in the companion popup)
         try:
             open(LOG, "w", encoding="utf-8").close()  # fresh log per launch
         except Exception:
@@ -302,7 +361,7 @@ class Worktop(QWidget):
         self.title.setOpenExternalLinks(True)                  # click opens Multica (reliable native open)
         self.title.linkHovered.connect(self._title_hover)      # hover state (fires over the anchor)
         self.title.linkActivated.connect(self._title_flash)    # brief pressed-flash on click
-        self.subtitle = QLabel(""); self.subtitle.setObjectName("subtitle")
+        self.subtitle = QLabel(""); self.subtitle.setObjectName("subtitle"); self.subtitle.setTextFormat(Qt.RichText)
         c.addWidget(self.title); c.addWidget(self.subtitle)
         prow = QHBoxLayout()
         self.bar = QProgressBar(); self.bar.setTextVisible(False); self.bar.setRange(0, 100)
@@ -311,8 +370,9 @@ class Worktop(QWidget):
         c.addLayout(prow)
         L.addWidget(card)
 
-        # deck: the OTHER concurrent lanes as an overlapping stack (hover slides one out, click focuses)
-        self.deck = StackDeck()
+        # deck: the OTHER conversations, grouped by PROJECT (project header + clickable rows)
+        self.deck = QWidget()
+        self.deck_box = QVBoxLayout(self.deck); self.deck_box.setContentsMargins(0, 2, 0, 0); self.deck_box.setSpacing(3)
         self.deck.setVisible(False)
         L.addWidget(self.deck)
 
@@ -320,9 +380,15 @@ class Worktop(QWidget):
         self.dec_panel = QFrame(); self.dec_panel.setObjectName("decpanel")
         dpl = QVBoxLayout(self.dec_panel); dpl.setContentsMargins(12, 8, 12, 9); dpl.setSpacing(4)
         self.dec_q = QLabel(); self.dec_q.setObjectName("decq"); self.dec_q.setWordWrap(True)
+        self.dec_q.setAlignment(Qt.AlignTop | Qt.AlignLeft); self.dec_q.setTextFormat(Qt.PlainText)
+        self.dec_qscroll = QScrollArea(); self.dec_qscroll.setObjectName("decqscroll")
+        self.dec_qscroll.setWidgetResizable(True); self.dec_qscroll.setWidget(self.dec_q)
+        self.dec_qscroll.setMaximumHeight(190)
+        self.dec_qscroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.dec_qscroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.dec_btns = QWidget(); self.dec_btns_box = QVBoxLayout(self.dec_btns)
         self.dec_btns_box.setContentsMargins(0, 0, 0, 0); self.dec_btns_box.setSpacing(5)
-        dpl.addWidget(self.dec_q); dpl.addWidget(self.dec_btns)
+        dpl.addWidget(self.dec_qscroll); dpl.addWidget(self.dec_btns)
         self.dec_input = QLineEdit(); self.dec_input.setObjectName("decinput")
         self.dec_input.setPlaceholderText("其他…(自定义回复,回车发送)")
         self.dec_input.returnPressed.connect(self._choose_other)
@@ -373,6 +439,7 @@ class Worktop(QWidget):
         self._savetimer.timeout.connect(self._save_geo)
         self._done_timer = QTimer(self); self._done_timer.setSingleShot(True)
         self._done_timer.timeout.connect(self._hide_done_banner)
+        self.imgpop = ImagePopup()   # companion window for decision images (shown beside the ball)
         self.refresh(True)
         self._restore_geo()
 
@@ -718,6 +785,7 @@ class Worktop(QWidget):
     def _dock_tick(self):
         if self.anim.state() == QPropertyAnimation.Running:
             return
+        self._sync_imgpop(self._dec_imgs)   # keep the decision-image popup in step with the ball
         if self.done_banner.isVisible():   # keep the window open while the banner shows
             if self.hidden:
                 self._show()
@@ -902,6 +970,31 @@ class Worktop(QWidget):
         self._render_focused(foc)
         self._render_deck([d for d in active if d["_lane"] != foc["_lane"]])
 
+    def _sync_imgpop(self, imgs):
+        # show the companion image window beside the ball iff the ball is open AND the
+        # focused decision carries images; otherwise hide it.
+        if imgs and not self.handle_mode and not self.hidden:
+            self.imgpop.set_images(imgs)
+            self.imgpop.resize(360, max(300, min(self.height(), 560)))
+            self._place_imgpop()
+            if not self.imgpop.isVisible():
+                self.imgpop.show()
+            self.imgpop.raise_()
+        elif self.imgpop.isVisible():
+            self.imgpop.hide()
+
+    def _place_imgpop(self):
+        g = self.frameGeometry(); s = self._scr()
+        w, h, gap = self.imgpop.width(), self.imgpop.height(), 8
+        if g.left() - gap - w >= s.left():
+            x = g.left() - gap - w           # prefer the left of the ball
+        else:
+            x = g.right() + gap              # else the right
+            if x + w > s.right() + 1:
+                x = max(s.left(), g.left() - gap - w)
+        y = max(s.top(), min(g.top(), s.bottom() - h + 1))
+        self.imgpop.move(x, y)
+
     def _render_focused(self, d):
         st = d.get("state", "idle")
         fdec = d.get("decision") or None
@@ -912,7 +1005,8 @@ class Worktop(QWidget):
         if fhas:
             q = fdec.get("q", "")
             opts = fdec.get("options") or []
-            self.dec_q.setText("⏳ 等你拍板 · " + q)
+            self._dec_imgs = fdec.get("images") or []
+            self.dec_q.setText("⏳ 等你拍板\n" + q)
             self._cur_dec_q = q
             sig = (d["_lane"], q, tuple(opts))
             if self._dec_sig != sig:  # rebuild buttons only when the choice set changes
@@ -929,6 +1023,7 @@ class Worktop(QWidget):
             self.dec_panel.setVisible(True)
         else:
             self._dec_sig = None
+            self._dec_imgs = []
             self.dec_panel.setVisible(False)
         self._title_text = d.get("title") or "待命中"
         new_link = d.get("link") or ""
@@ -936,7 +1031,9 @@ class Worktop(QWidget):
             self._title_link = new_link
             self._title_state = "hover" if self._title_hovering else "normal"
         self._render_title()
-        self.subtitle.setText(d.get("subtitle") or "")
+        proj = _esc(d.get("project") or "")
+        sub = _esc(d.get("subtitle") or "")
+        self.subtitle.setText((f"<span style='color:#7fb6c8;font-weight:700;'>{proj}</span> · {sub}") if proj else sub)
         steps = d.get("steps", [])
         total = len(steps)
         done = sum(1 for s in steps if s.get("status") == "done")
@@ -971,11 +1068,39 @@ class Worktop(QWidget):
             sb.setValue(sb.maximum())
 
     def _render_deck(self, others):
+        while self.deck_box.count():
+            it = self.deck_box.takeAt(0); w = it.widget()
+            if w:
+                w.deleteLater()
         if not others:
             self.deck.setVisible(False)
             return
         self.deck.setVisible(True)
-        self.deck.set_cards(others, self)
+        # group the other conversations by PROJECT (the 大分类); newest-first within each
+        groups, order = {}, []
+        for d in others:
+            p = d.get("project") or "?"
+            if p not in groups:
+                groups[p] = []; order.append(p)
+            groups[p].append(d)
+        for p in order:
+            hdr = QLabel(f"{p}  ·  {len(groups[p])}"); hdr.setObjectName("projhdr")
+            self.deck_box.addWidget(hdr)
+            for d in groups[p]:
+                self.deck_box.addWidget(self._make_row(d))
+
+    def _make_row(self, d):
+        st = d.get("state", "idle"); dq = (d.get("decision") or {}).get("q")
+        steps = d.get("steps", []); total = len(steps); done = sum(1 for s in steps if s.get("status") == "done")
+        prog = f"{done}/{total}" if total else ("完成" if st == "done" else "—")
+        dot = DECISION if dq else DOTCOLOR.get(st, "#6b6b6b")
+        row = PeekCard(d["_lane"], self, self.deck); row.setMinimumHeight(28)
+        lay = QHBoxLayout(row); lay.setContentsMargins(11, 3, 11, 3); lay.setSpacing(8)
+        dl = QLabel("●"); dl.setStyleSheet(f"color:{dot}; font-size:11px; background:transparent;")
+        tl = QLabel(_esc(d.get("title") or "待命中")); tl.setObjectName("striptitle"); tl.setTextFormat(Qt.PlainText)
+        pl = QLabel(("⏳ " if dq else "") + prog); pl.setStyleSheet(f"color:{DECISION if dq else '#8a8a8a'}; font-size:11px; background:transparent;")
+        lay.addWidget(dl); lay.addWidget(tl, 1); lay.addWidget(pl)
+        return row
 
     def _focus_click(self, lane):
         self._focus_lane = lane

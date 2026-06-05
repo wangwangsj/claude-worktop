@@ -2,7 +2,7 @@
 """Real-time link: block until the user clicks THIS lane's Worktop decision option,
 then print the choice and exit. Run in the BACKGROUND — its exit re-invokes the agent
 with the click. Reads a PER-LANE response file (response_<lane>.json) so each agent
-only sees its own lane's clicks. Lane = --lane <lane> | $WORKTOP_LANE | main. stdlib only.
+only sees its own lane's clicks. Lane = --lane | $WORKTOP_LANE | $CLAUDE_CODE_SESSION_ID | main.
 
 Pair with `worktop.py decide --id <lane>`: present a decision, launch this watcher with
 the SAME lane in the background, end the turn; the user's click wakes the agent."""
@@ -18,7 +18,7 @@ def _lane(argv):
     for i, a in enumerate(argv):
         if a == "--lane" and i + 1 < len(argv):
             return argv[i + 1]
-    return os.environ.get("WORKTOP_LANE") or "main"
+    return os.environ.get("WORKTOP_LANE") or os.environ.get("CLAUDE_CODE_SESSION_ID") or "main"
 
 
 def main():

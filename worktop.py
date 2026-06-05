@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Worktop — progress-state writer (stdlib only). Multi-lane.
+"""Worktop — progress-state writer (stdlib only). Global, multi-lane.
 
-Each concurrent agent writes its OWN lane file (<state>/lanes/<lane>.json), so
-parallel agents never clobber each other — the GUI (gui.pyw) globs the lane dir
-and shows one task card per lane. State location is per-project (see worktop_paths).
-Lane id resolves as:  --id <lane>  >  $WORKTOP_LANE  >  $CLAUDE_SESSION_ID  >  'main'
-(concurrent agents in the same session should pass distinct --id values.)
+Each Claude CONVERSATION writes its OWN lane file (<state>/lanes/<lane>.json); the GUI
+globs the GLOBAL lane dir and shows one card per conversation, grouped by project. The
+lane defaults to the conversation id and the project to the working-dir name, so no flags
+are needed — just run worktop.py from the project folder.
+Lane id resolves as:  --id <lane>  >  $WORKTOP_LANE  >  $CLAUDE_CODE_SESSION_ID  >  'main'
+Project resolves as:  $WORKTOP_PROJECT  >  basename(cwd).
 
 Commands (all operate on the current lane):
   task "<title>" ["<subtitle>"] ["<link>"]  start a new task (clears steps + log)
@@ -38,7 +39,7 @@ def _lane_from(argv):
         if argv[i] == "--id" and i + 1 < len(argv):
             lane = argv[i + 1]; i += 2; continue
         out.append(argv[i]); i += 1
-    lane = lane or os.environ.get("WORKTOP_LANE") or os.environ.get("CLAUDE_SESSION_ID") or "main"
+    lane = lane or os.environ.get("WORKTOP_LANE") or os.environ.get("CLAUDE_CODE_SESSION_ID") or "main"
     lane = "".join(c if (c.isalnum() or c in "-_") else "_" for c in lane)[:48] or "main"
     return lane, out
 
@@ -58,6 +59,7 @@ def load(lane):
 def save(lane, d):
     os.makedirs(LANE_DIR, exist_ok=True)
     d["lane"] = lane
+    d["project"] = os.environ.get("WORKTOP_PROJECT") or os.path.basename(os.path.abspath(os.getcwd())) or "?"
     d["updated"] = _now()
     d["ts"] = time.time()
     fd, tmp = tempfile.mkstemp(dir=LANE_DIR, suffix=".tmp")

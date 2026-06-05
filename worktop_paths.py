@@ -1,26 +1,24 @@
 """Worktop shared path / identity resolution (stdlib only).
 
-State is PER-PROJECT: it lives in ``<project>/.worktop/``, located via the
-``WORKTOP_STATE`` environment variable when set, otherwise ``<cwd>/.worktop``.
-``worktop.py`` runs from the project root and ``gui.pyw`` is launched with that
-root as its working directory, so writer and GUI resolve to the same folder.
-The GUI's single-instance name is derived from the state path, so every project
-gets its own independent ball window + lanes.
+State is GLOBAL: ONE location shared by every project and conversation, located via the
+``WORKTOP_STATE`` env var when set, otherwise ``~/.worktop``. A single ball window shows
+all projects' conversations, grouped by project. ``worktop.py`` (run from any project) and
+``gui.pyw`` (launched anywhere) both resolve to the same global folder, so the GUI sees
+every conversation. The single-instance name is fixed, so only one global ball runs.
 """
 import os
-import hashlib
 
 
 def _state_dir():
     env = os.environ.get("WORKTOP_STATE")
     if env:
         return os.path.abspath(env)
-    return os.path.join(os.path.abspath(os.getcwd()), ".worktop")
+    return os.path.join(os.path.expanduser("~"), ".worktop")   # GLOBAL — all projects/conversations
 
 
 STATE_DIR = _state_dir()
 LANE_DIR = os.path.join(STATE_DIR, "lanes")
-RESP = os.path.join(STATE_DIR, "response.json")
+RESP = os.path.join(STATE_DIR, "response.json")   # legacy shared file; per-lane response_<lane>.json is preferred
 WINCFG = os.path.join(STATE_DIR, "win.json")
 LOG = os.path.join(STATE_DIR, "gui.log")
-INSTANCE_NAME = "worktop-" + hashlib.md5(STATE_DIR.encode("utf-8")).hexdigest()[:10]
+INSTANCE_NAME = "worktop-global"   # single global ball (one window for all projects)

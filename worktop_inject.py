@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """UserPromptSubmit hook — deliver THIS lane's Worktop decision click to the agent.
 
-Reads a PER-LANE response file response_<lane>.json where lane = $WORKTOP_LANE. If
-WORKTOP_LANE is NOT set, this does NOTHING — preventing cross-agent leakage (a click on
-one agent's card must not be injected into a different agent's prompt). With multiple
-concurrent agents, prefer the lane-scoped worktop_watch.py for delivery. stdlib only."""
+Reads a PER-LANE response file response_<lane>.json where lane = $WORKTOP_LANE or
+$CLAUDE_CODE_SESSION_ID (the conversation id). If neither is set, this does NOTHING —
+preventing cross-agent leakage. Since each Claude conversation has a distinct session id,
+it delivers THIS conversation's clicks reliably without cross-feeding. stdlib only."""
 import sys
 import os
 import json
@@ -17,7 +17,7 @@ def main():
         sys.stdout.reconfigure(encoding="utf-8")  # the agent reads hook stdout as UTF-8
     except Exception:
         pass
-    lane = os.environ.get("WORKTOP_LANE")
+    lane = os.environ.get("WORKTOP_LANE") or os.environ.get("CLAUDE_CODE_SESSION_ID")
     if not lane:
         return 0  # no session lane -> no passive delivery (avoid cross-agent leak)
     resp = os.path.join(STATE_DIR, "response_" + lane + ".json")
