@@ -34,6 +34,9 @@ install.bat
 
 `install.bat` creates a local `.venv` and installs PySide6 into it. Nothing global is touched.
 
+To wire a project so its agent knows the conventions, run **`worktop-wire.bat`** from that project's
+root — it appends a short Worktop section (pointing at [AGENTS.md](AGENTS.md)) to the project's `CLAUDE.md`, idempotently.
+
 ## Launch
 
 Run from your **project folder** (state lands in `.\.worktop\`):

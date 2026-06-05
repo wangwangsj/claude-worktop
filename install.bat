@@ -46,5 +46,8 @@ echo.
 echo   Agent call convention (working directory = the project root):
 echo       "%~dp0.venv\Scripts\python.exe" "%~dp0worktop.py" task "Title" --id ^<lane^>
 echo.
-echo   See README.md for the Claude Code settings.json hook and agent instructions.
+echo   Wire a project's CLAUDE.md with the agent conventions (run from that project):
+echo       "%~dp0worktop-wire.bat"
+echo.
+echo   Agent conventions: "%~dp0AGENTS.md"   ^|  decision hook + more: README.md
 endlocal
